@@ -1,5 +1,6 @@
 import express from 'express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
+import { rateLimit } from 'express-rate-limit'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -20,6 +21,15 @@ const registryAuth = 'Basic ' + Buffer.from(`${REGISTRY_USERNAME}:${REGISTRY_PAS
 
 const app = express()
 
+// Rate limit: 10 failed auth attempts per IP per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  message: 'Too many failed attempts, try again later.',
+})
+app.use(authLimiter)
+
 // Site-level Basic Auth
 app.use((req, res, next) => {
   const auth = req.headers['authorization']
@@ -32,7 +42,9 @@ app.use((req, res, next) => {
 })
 
 // Proxy /v2/ → registry with credentials
-app.use('/v2', createProxyMiddleware({
+// pathFilter preserves the /v2 prefix (unlike app.use('/v2') which strips it)
+app.use(createProxyMiddleware({
+  pathFilter: '/v2',
   target: VITE_REGISTRY_URL,
   changeOrigin: true,
   secure: false,
