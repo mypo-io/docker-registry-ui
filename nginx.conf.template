@@ -1,0 +1,33 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Site-level Basic Auth — защита от посторонних
+    auth_basic "Docker Registry UI";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    # Proxy Docker Registry API — credentials добавляются сервером, не браузером
+    location /v2/ {
+        proxy_pass ${VITE_REGISTRY_URL}/v2/;
+        proxy_ssl_server_name on;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Credentials из env vars, браузер их не знает
+        proxy_set_header Authorization "Basic ${REGISTRY_AUTH_BASE64}";
+        proxy_hide_header Authorization;
+
+        client_max_body_size 0;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+    }
+
+    # Vue router SPA
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
