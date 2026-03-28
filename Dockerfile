@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# VITE_REGISTRY_URL must be passed as a build arg so Vite embeds it in the JS bundle
+ARG VITE_REGISTRY_URL
 RUN npm run build
 
 FROM nginx:alpine
