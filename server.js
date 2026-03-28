@@ -48,6 +48,6 @@ app.use('/v2', createProxyMiddleware({
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.join(__dirname, 'dist')
 app.use(express.static(dist))
-app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+app.get('*path', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
 
 app.listen(PORT, () => console.log(`Running on port ${PORT}`))
