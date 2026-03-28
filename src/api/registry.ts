@@ -19,12 +19,48 @@ async function registryFetch(path: string): Promise<unknown> {
   return res.json()
 }
 
+/** Result of a single catalog page request. */
+export interface CatalogPage {
+  repositories: string[]
+  /** Cursor to pass as `last` for the next page, or `null` if this is the last page. */
+  nextCursor: string | null
+}
+
 /**
- * Returns the list of all repository names in the registry.
+ * Fetches one page of repository names from the registry catalog.
+ *
+ * The registry uses cursor-based pagination: pass the `nextCursor` from the
+ * previous response as `last` to get the following page.
+ *
+ * @param pageSize - Maximum number of repositories to return (default 50).
+ * @param last - Cursor from the previous page; omit for the first page.
  */
-export async function fetchCatalog(): Promise<string[]> {
-  const data = (await registryFetch('/_catalog?n=1000')) as { repositories?: string[] }
-  return data.repositories ?? []
+export async function fetchCatalogPage(pageSize = 50, last?: string): Promise<CatalogPage> {
+  const params = new URLSearchParams({ n: String(pageSize) })
+  if (last) params.set('last', last)
+
+  const res = await fetch(`/v2/_catalog?${params}`)
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Unauthorized — check registry credentials in env vars')
+    throw new Error(`Registry error: ${res.status} ${res.statusText}`)
+  }
+
+  const data = (await res.json()) as { repositories?: string[] }
+  const repositories = data.repositories ?? []
+
+  // The registry signals more pages via a Link: <...?last=X>; rel="next" header.
+  // Fall back to using the last item as cursor if a full page was returned but
+  // no Link header is present (some registry implementations omit it).
+  let nextCursor: string | null = null
+  const link = res.headers.get('Link')
+  if (link) {
+    const match = link.match(/[?&]last=([^&>]+)/)
+    if (match?.[1]) nextCursor = decodeURIComponent(match[1])
+  } else if (repositories.length === pageSize) {
+    nextCursor = repositories[repositories.length - 1] ?? null
+  }
+
+  return { repositories, nextCursor }
 }
 
 /**

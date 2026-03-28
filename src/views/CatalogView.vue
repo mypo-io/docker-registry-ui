@@ -4,11 +4,11 @@
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Repositories</h1>
         <p class="text-gray-500 text-sm mt-1">
-          {{ repositories.length }} images across {{ Object.keys(grouped).length }} namespaces
+          {{ repositories.length }}{{ hasMore ? '+' : '' }} images across {{ Object.keys(grouped).length }} namespaces
         </p>
       </div>
       <button
-        @click="load"
+        @click="reload"
         :disabled="loading"
         class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 transition-all text-sm font-medium disabled:opacity-50"
       >
@@ -26,6 +26,7 @@
       {{ error }}
     </div>
 
+    <!-- Initial skeleton -->
     <div v-if="loading && !repositories.length" class="space-y-4">
       <div v-for="i in 2" :key="i" class="bg-gray-900/50 rounded-2xl p-4 border border-gray-800 animate-pulse">
         <div class="h-5 w-32 bg-gray-800 rounded mb-3" />
@@ -100,14 +101,26 @@
           </RouterLink>
         </div>
       </div>
+
+      <!-- Sentinel element observed by IntersectionObserver to trigger next page load -->
+      <div ref="sentinel" class="h-px" />
+
+      <!-- Loading next page -->
+      <div v-if="loading && repositories.length" class="flex justify-center py-4">
+        <svg class="w-5 h-5 text-gray-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchCatalog } from '@/api/registry'
+import { fetchCatalogPage } from '@/api/registry'
+
+const PAGE_SIZE = 50
 
 interface Repo {
   /** Full repository path, e.g. `mypo-io/mypo-landing` */
@@ -120,9 +133,14 @@ const repositories = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
+const hasMore = ref(false)
+const cursor = ref<string | null>(null)
 
 /** Tracks collapsed state per namespace; true = collapsed */
 const collapsed = reactive<Record<string, boolean>>({})
+
+/** Sentinel DOM element watched by the IntersectionObserver */
+const sentinel = ref<HTMLElement | null>(null)
 
 /**
  * Repositories grouped by namespace (the part before the first `/`).
@@ -168,11 +186,16 @@ function nsColor(ns: string, alpha: number): string {
   return `hsla(${h}, 65%, 60%, ${alpha})`
 }
 
-async function load(): Promise<void> {
+/** Fetches the next page and appends results to `repositories`. */
+async function loadMore(): Promise<void> {
+  if (loading.value || !hasMore.value) return
   loading.value = true
   error.value = ''
   try {
-    repositories.value = await fetchCatalog()
+    const page = await fetchCatalogPage(PAGE_SIZE, cursor.value ?? undefined)
+    repositories.value.push(...page.repositories)
+    cursor.value = page.nextCursor
+    hasMore.value = page.nextCursor !== null
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -180,5 +203,39 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load)
+/** Resets state and loads the first page. */
+async function reload(): Promise<void> {
+  repositories.value = []
+  cursor.value = null
+  hasMore.value = true
+  loading.value = true
+  error.value = ''
+  try {
+    const page = await fetchCatalogPage(PAGE_SIZE)
+    repositories.value = page.repositories
+    cursor.value = page.nextCursor
+    hasMore.value = page.nextCursor !== null
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+let observer: IntersectionObserver | null = null
+
+onMounted(async () => {
+  await reload()
+
+  // Watch the sentinel element: when it enters the viewport, load the next page.
+  observer = new IntersectionObserver(
+    (entries) => { if (entries[0]?.isIntersecting) loadMore() },
+    { rootMargin: '200px' },
+  )
+  watch(sentinel, (el) => {
+    if (el) observer!.observe(el)
+  }, { immediate: true })
+})
+
+onUnmounted(() => observer?.disconnect())
 </script>
