@@ -1,6 +1,5 @@
 <template>
   <div>
-    <!-- Breadcrumb -->
     <div class="flex items-center gap-2 text-sm text-gray-500 mb-6">
       <RouterLink to="/" class="hover:text-white transition-colors">Repositories</RouterLink>
       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -9,7 +8,6 @@
       <span class="text-white font-mono">{{ name }}</span>
     </div>
 
-    <!-- Header -->
     <div class="flex items-start justify-between mb-8">
       <div>
         <h1 class="text-2xl font-bold font-mono tracking-tight">{{ imageName }}</h1>
@@ -27,7 +25,6 @@
       </button>
     </div>
 
-    <!-- Error -->
     <div v-if="error" class="flex items-center gap-3 text-red-400 text-sm bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3 mb-6">
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -35,21 +32,18 @@
       {{ error }}
     </div>
 
-    <!-- Skeleton -->
     <div v-if="loading && !tags.length" class="space-y-2">
       <div v-for="i in 5" :key="i" class="h-14 bg-gray-900 rounded-xl border border-gray-800 animate-pulse" />
     </div>
 
-    <!-- Empty -->
     <div v-else-if="!tags.length && !loading" class="text-center text-gray-600 py-24">
       <p class="text-lg font-medium text-gray-500">No tags found</p>
     </div>
 
-    <!-- Tags list -->
     <div v-else>
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-widest">{{ tags.length }} tags</span>
-      </div>
+      <span class="text-xs text-gray-500 font-medium uppercase tracking-widest block mb-3">
+        {{ tags.length }} tags
+      </span>
 
       <div class="rounded-2xl border border-gray-800 overflow-hidden divide-y divide-gray-800/60">
         <div
@@ -57,7 +51,6 @@
           :key="tag"
           class="flex items-center justify-between px-5 py-3.5 bg-gray-900/60 hover:bg-gray-800/40 transition-colors group"
         >
-          <!-- Tag info -->
           <div class="flex items-center gap-3 min-w-0">
             <span
               v-if="tag === 'latest'"
@@ -73,9 +66,7 @@
             </span>
           </div>
 
-          <!-- Actions -->
           <div class="flex items-center gap-2 shrink-0">
-            <!-- Copy docker pull -->
             <button
               @click="copyPullCmd(tag)"
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono text-gray-400 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 transition-all"
@@ -86,19 +77,17 @@
               {{ copied === tag ? 'Copied!' : 'docker pull' }}
             </button>
 
-            <!-- Delete -->
             <button
               v-if="confirmDelete !== tag"
               @click="confirmDelete = tag"
-              class="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-950/40 border border-transparent hover:border-red-800/40 transition-all"
               title="Delete tag"
+              class="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-950/40 border border-transparent hover:border-red-800/40 transition-all"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
             </button>
 
-            <!-- Confirm delete -->
             <div v-else class="flex items-center gap-1.5">
               <span class="text-xs text-red-400">Delete?</span>
               <button
@@ -106,8 +95,7 @@
                 :disabled="deleting === tag"
                 class="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white transition-colors"
               >
-                <span v-if="deleting === tag">...</span>
-                <span v-else>Yes</span>
+                {{ deleting === tag ? '…' : 'Yes' }}
               </button>
               <button
                 @click="confirmDelete = ''"
@@ -121,7 +109,6 @@
       </div>
     </div>
 
-    <!-- Delete error toast -->
     <div
       v-if="deleteError"
       class="fixed bottom-6 right-6 flex items-start gap-3 max-w-md bg-gray-900 border border-red-800/60 rounded-xl px-4 py-3 shadow-2xl"
@@ -149,19 +136,22 @@ import { fetchTags, deleteTag } from '@/api/registry'
 
 const route = useRoute()
 
+/** Full repository path, e.g. `mypo-io/mypo-landing` */
 const name = computed<string>(() => {
   const p = route.params.name
   return Array.isArray(p) ? p.join('/') : (p ?? '')
 })
 
+/** Namespace prefix before the first `/`, empty for root repositories */
 const namespace = computed(() => {
-  const slashIdx = name.value.indexOf('/')
-  return slashIdx !== -1 ? name.value.slice(0, slashIdx) : ''
+  const i = name.value.indexOf('/')
+  return i !== -1 ? name.value.slice(0, i) : ''
 })
 
+/** Repository name without the namespace prefix */
 const imageName = computed(() => {
-  const slashIdx = name.value.indexOf('/')
-  return slashIdx !== -1 ? name.value.slice(slashIdx + 1) : name.value
+  const i = name.value.indexOf('/')
+  return i !== -1 ? name.value.slice(i + 1) : name.value
 })
 
 const tags = ref<string[]>([])
@@ -172,44 +162,47 @@ const confirmDelete = ref('')
 const deleting = ref('')
 const deleteError = ref('')
 
-const sortedTags = computed(() => {
-  return [...tags.value].sort((a, b) => {
+/**
+ * Tags sorted with `latest` first, then numerically descending.
+ * Numeric comparison handles semver-like tags such as `1.2.0` vs `1.10.0`.
+ */
+const sortedTags = computed(() =>
+  [...tags.value].sort((a, b) => {
     if (a === 'latest') return -1
     if (b === 'latest') return 1
     return b.localeCompare(a, undefined, { numeric: true })
-  })
-})
+  }),
+)
 
-async function load() {
+async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
     tags.value = await fetchTags(name.value)
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
 }
 
-async function copyPullCmd(tag: string) {
-  const registryUrl = import.meta.env.VITE_REGISTRY_URL;
-  const registryHost = new URL(registryUrl).host
-  const cmd = `docker pull ${registryHost}/${name.value}:${tag}`
-  await navigator.clipboard.writeText(cmd)
+/** Copies the full `docker pull` command for the given tag to the clipboard. */
+async function copyPullCmd(tag: string): Promise<void> {
+  const host = new URL(import.meta.env.VITE_REGISTRY_URL).host
+  await navigator.clipboard.writeText(`docker pull ${host}/${name.value}:${tag}`)
   copied.value = tag
   setTimeout(() => (copied.value = ''), 2000)
 }
 
-async function doDelete(tag: string) {
+async function doDelete(tag: string): Promise<void> {
   deleting.value = tag
   deleteError.value = ''
   try {
     await deleteTag(name.value, tag)
     tags.value = tags.value.filter((t) => t !== tag)
     confirmDelete.value = ''
-  } catch (e: any) {
-    deleteError.value = e.message
+  } catch (e) {
+    deleteError.value = e instanceof Error ? e.message : String(e)
     confirmDelete.value = ''
     setTimeout(() => (deleteError.value = ''), 8000)
   } finally {

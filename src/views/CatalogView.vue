@@ -1,10 +1,11 @@
 <template>
   <div>
-    <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Repositories</h1>
-        <p class="text-gray-500 text-sm mt-1">{{ repositories.length }} images across {{ Object.keys(grouped).length }} namespaces</p>
+        <p class="text-gray-500 text-sm mt-1">
+          {{ repositories.length }} images across {{ Object.keys(grouped).length }} namespaces
+        </p>
       </div>
       <button
         @click="load"
@@ -18,7 +19,6 @@
       </button>
     </div>
 
-    <!-- Error -->
     <div v-if="error" class="flex items-center gap-3 text-red-400 text-sm bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3 mb-6">
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -26,7 +26,6 @@
       {{ error }}
     </div>
 
-    <!-- Skeleton -->
     <div v-if="loading && !repositories.length" class="space-y-4">
       <div v-for="i in 2" :key="i" class="bg-gray-900/50 rounded-2xl p-4 border border-gray-800 animate-pulse">
         <div class="h-5 w-32 bg-gray-800 rounded mb-3" />
@@ -36,7 +35,6 @@
       </div>
     </div>
 
-    <!-- Empty -->
     <div v-else-if="!repositories.length && !loading" class="text-center text-gray-600 py-24">
       <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
@@ -44,9 +42,7 @@
       <p class="text-lg font-medium text-gray-500">No repositories found</p>
     </div>
 
-    <!-- Content -->
     <div v-else class="space-y-3">
-      <!-- Search -->
       <div class="relative mb-6">
         <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -59,26 +55,32 @@
         />
       </div>
 
-      <!-- Namespace groups -->
       <div v-for="(repos, ns) in filteredGrouped" :key="ns" class="rounded-2xl border border-gray-800 overflow-hidden">
-        <!-- Namespace header -->
         <button
           class="w-full flex items-center justify-between px-5 py-4 bg-gray-900 hover:bg-gray-800/80 transition-colors"
           @click="toggleNs(ns)"
         >
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold" :style="{ background: nsColor(ns, 0.15), color: nsColor(ns, 1) }">
+            <div
+              class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+              :style="{ background: nsColor(ns, 0.15), color: nsColor(ns, 1) }"
+            >
               {{ ns.slice(0, 2).toUpperCase() }}
             </div>
             <span class="font-semibold text-white">{{ ns }}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">{{ repos.length }}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
+              {{ repos.length }}
+            </span>
           </div>
-          <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" :class="{ 'rotate-180': !collapsed[ns] }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            class="w-4 h-4 text-gray-500 transition-transform duration-200"
+            :class="{ 'rotate-180': !collapsed[ns] }"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
           </svg>
         </button>
 
-        <!-- Repos list -->
         <div v-show="!collapsed[ns]" class="divide-y divide-gray-800/60">
           <RouterLink
             v-for="repo in repos"
@@ -107,25 +109,37 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchCatalog } from '@/api/registry'
 
+interface Repo {
+  /** Full repository path, e.g. `mypo-io/mypo-landing` */
+  full: string
+  /** Repository name without the namespace prefix */
+  name: string
+}
+
 const repositories = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
+
+/** Tracks collapsed state per namespace; true = collapsed */
 const collapsed = reactive<Record<string, boolean>>({})
 
-// Group repos by namespace (prefix before first /)
+/**
+ * Repositories grouped by namespace (the part before the first `/`).
+ * Repositories without a `/` are placed under the `(root)` group.
+ */
 const grouped = computed(() => {
-  const groups: Record<string, { full: string; name: string }[]> = {}
+  const groups: Record<string, Repo[]> = {}
   for (const r of repositories.value) {
     const slashIdx = r.indexOf('/')
     const ns = slashIdx !== -1 ? r.slice(0, slashIdx) : '(root)'
     const name = slashIdx !== -1 ? r.slice(slashIdx + 1) : r
-    if (!groups[ns]) groups[ns] = []
-    groups[ns].push({ full: r, name })
+    ;(groups[ns] ??= []).push({ full: r, name })
   }
   return groups
 })
 
+/** Filtered version of `grouped`, matching the current search query. */
 const filteredGrouped = computed(() => {
   const q = search.value.toLowerCase()
   if (!q) return grouped.value
@@ -137,11 +151,16 @@ const filteredGrouped = computed(() => {
   return result
 })
 
-function toggleNs(ns: string) {
+/** Toggles the collapsed state of the given namespace group. */
+function toggleNs(ns: string): void {
   collapsed[ns] = !collapsed[ns]
 }
 
-// Deterministic color from namespace name
+/**
+ * Returns a deterministic HSL color derived from the namespace name.
+ * The same namespace always produces the same hue.
+ * @param alpha - CSS alpha value (0–1)
+ */
 function nsColor(ns: string, alpha: number): string {
   let hash = 0
   for (let i = 0; i < ns.length; i++) hash = ns.charCodeAt(i) + ((hash << 5) - hash)
@@ -149,13 +168,13 @@ function nsColor(ns: string, alpha: number): string {
   return `hsla(${h}, 65%, 60%, ${alpha})`
 }
 
-async function load() {
+async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
     repositories.value = await fetchCatalog()
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
