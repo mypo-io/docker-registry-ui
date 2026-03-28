@@ -25,8 +25,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
 
-console.log(import.meta.env);
-
 const registryUrl = import.meta.env.VITE_REGISTRY_URL
 const registryHost = new URL(registryUrl).host
 </script>
