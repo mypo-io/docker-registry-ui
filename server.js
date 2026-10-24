@@ -12,7 +12,7 @@
 
 import express from 'express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
-import { rateLimit } from 'express-rate-limit'
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
 import { fileURLToPath } from 'node:url'
 import { timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
@@ -39,14 +39,20 @@ const app = express()
 // from the X-Forwarded-For header instead of the proxy's IP.
 app.set('trust proxy', 1)
 
-// Block an IP after 5 consecutive failed auth attempts for 15 minutes.
-// skipSuccessfulRequests ensures legitimate users are never counted.
-app.use(rateLimit({
+const AUTH_MAX_FAILURES = 5
+const AUTH_LOCKOUT_MESSAGE = 'Too many failed attempts, please try again later.'
+
+const authFailureKey = (req) => ipKeyGenerator(req.ip)
+
+// Counts only failed logins. Running it on every request would also count
+// in-flight successful ones (hits are added before the response), so a page
+// firing >5 parallel registry calls would 429 itself.
+const authFailureLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5,
-  skipSuccessfulRequests: true,
-  message: 'Too many failed attempts, please try again later.',
-}))
+  limit: AUTH_MAX_FAILURES,
+  keyGenerator: authFailureKey,
+  message: AUTH_LOCKOUT_MESSAGE,
+})
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -60,22 +66,26 @@ function safeEqual(a, b) {
   }
 }
 
-// Site-level HTTP Basic Auth.
-// Credentials are validated on every request before any content is served.
-app.use((req, res, next) => {
-  const auth = req.headers['authorization']
-  if (auth?.startsWith('Basic ')) {
-    const decoded = Buffer.from(auth.slice(6), 'base64').toString()
-    const colon = decoded.indexOf(':')
-    if (colon !== -1) {
-      const user = decoded.slice(0, colon)
-      // slice from colon+1 preserves colons inside the password itself
-      const pass = decoded.slice(colon + 1)
-      if (safeEqual(user, SITE_USERNAME) && safeEqual(pass, SITE_PASSWORD)) return next()
-    }
-  }
-  res.set('WWW-Authenticate', 'Basic realm="Docker Registry UI"')
-  res.status(401).send('Unauthorized')
+function hasSiteCredentials(auth) {
+  if (!auth?.startsWith('Basic ')) return false
+  const decoded = Buffer.from(auth.slice(6), 'base64').toString()
+  const colon = decoded.indexOf(':')
+  if (colon === -1) return false
+  // slice from colon+1 preserves colons inside the password itself
+  return safeEqual(decoded.slice(0, colon), SITE_USERNAME) && safeEqual(decoded.slice(colon + 1), SITE_PASSWORD)
+}
+
+// Site-level HTTP Basic Auth, validated on every request before any content is served.
+// A locked-out IP is rejected even with correct credentials, otherwise 429 vs 200
+// would still tell a brute-forcer which guess was right.
+app.use(async (req, res, next) => {
+  const failures = (await authFailureLimiter.getKey(authFailureKey(req)))?.totalHits ?? 0
+  if (failures >= AUTH_MAX_FAILURES) return res.status(429).send(AUTH_LOCKOUT_MESSAGE)
+  if (hasSiteCredentials(req.headers.authorization)) return next()
+  authFailureLimiter(req, res, () => {
+    res.set('WWW-Authenticate', 'Basic realm="Docker Registry UI"')
+    res.status(401).send('Unauthorized')
+  })
 })
 
 // Proxy all /v2/* requests to the registry.

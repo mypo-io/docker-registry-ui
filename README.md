@@ -7,10 +7,12 @@ Browse repositories, inspect tags, copy `docker pull` commands, and delete image
 ## Features
 
 - **Browse repositories** grouped by namespace (e.g. `mypo-io/mypo-landing` → group `mypo-io`)
-- **List tags** sorted with `latest` first, then numerically descending
-- **Copy `docker pull`** command to clipboard with one click
-- **Delete tags** with a two-step confirmation (requires `delete: enabled: true` in registry config)
-- **Site protection** via HTTP Basic Auth with rate limiting (5 attempts / 15 min per IP)
+- **At-a-glance status** — every repository shows its newest tag, when the deployed image was built, and tag count; sort by name or by recently updated
+- **Tag details** — digest, compressed size, build time and platforms for every tag (multi-arch / OCI index aware)
+- **Copy `docker pull`** by tag, or pin by digest (click the digest)
+- **Delete tags** with confirmation that names every other tag sharing the same image — the registry deletes manifests, so those go too (requires `delete: enabled: true` in registry config)
+- **Keyboard** — `/` focuses search / tag filter, `Esc` clears it
+- **Site protection** via HTTP Basic Auth; an IP is locked out for 15 min after 5 failed logins (successful traffic is never counted)
 - **No credentials in the browser** — registry auth is handled server-side by the Node.js proxy
 
 ## How it works

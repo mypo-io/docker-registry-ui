@@ -4,13 +4,11 @@
       <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
         <RouterLink to="/" class="flex items-center gap-2.5 group">
           <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">
-            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-            </svg>
+            <AppIcon name="box" class="w-4 h-4 text-blue-400" />
           </div>
           <div>
             <span class="font-semibold text-white text-sm block leading-none">Docker Registry</span>
-            <span class="text-gray-600 text-xs font-mono leading-none">{{ registryHost }}</span>
+            <span class="text-gray-600 text-xs font-mono leading-none">{{ REGISTRY_HOST }}</span>
           </div>
         </RouterLink>
       </div>
@@ -24,7 +22,6 @@
 
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-
-const registryUrl = import.meta.env.VITE_REGISTRY_URL
-const registryHost = new URL(registryUrl).host
+import AppIcon from '@/components/AppIcon.vue'
+import { REGISTRY_HOST } from '@/constants/registry.const'
 </script>

@@ -6,98 +6,157 @@
  * @see https://distribution.github.io/distribution/spec/api/
  */
 
-/**
- * Fetches a JSON endpoint from the registry API.
- * @throws {Error} on non-2xx responses, with a human-readable message.
- */
-async function registryFetch(path: string): Promise<unknown> {
-  const res = await fetch(`/v2${path}`)
-  if (!res.ok) {
-    if (res.status === 401) throw new Error('Unauthorized — check registry credentials in env vars')
-    throw new Error(`Registry error: ${res.status} ${res.statusText}`)
-  }
-  return res.json()
+import { LATEST_TAG, MANIFEST_ACCEPT } from '@/constants/registry.const'
+import { newestVersion } from '@/utils/repository'
+
+interface Platform {
+  os: string
+  architecture: string
+  variant?: string
 }
 
-/** Result of a single catalog page request. */
+interface Descriptor {
+  mediaType: string
+  digest: string
+  size: number
+  platform?: Platform
+}
+
+/** Single-image manifest or multi-platform index — distinguished by `manifests`. */
+interface Manifest {
+  config?: Descriptor
+  layers?: Descriptor[]
+  manifests?: Descriptor[]
+}
+
+interface ImageConfig extends Partial<Platform> {
+  created?: string
+}
+
 export interface CatalogPage {
   repositories: string[]
   /** Cursor to pass as `last` for the next page, or `null` if this is the last page. */
   nextCursor: string | null
 }
 
+export interface ImageDetails {
+  digest: string
+  /** Compressed size: config + layers. For multi-platform images, of the first platform. */
+  size: number
+  /** Build time from the image config; `null` if the config blob couldn't be read. */
+  createdAt: Date | null
+  platforms: string[]
+}
+
+export interface RepositorySummary {
+  tagCount: number
+  newestVersion: string | null
+  updatedAt: Date | null
+}
+
+function describeError(res: Response): string {
+  if (res.status === 401) return 'Unauthorized — check registry credentials in env vars'
+  if (res.status === 405) return 'Registry has deletions disabled — add `delete: enabled: true` to registry config'
+  return `Registry error: ${res.status} ${res.statusText}`
+}
+
+async function registryRequest(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`/v2${path}`, init)
+  if (!res.ok) throw new Error(describeError(res))
+  return res
+}
+
+async function registryJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await registryRequest(path, init)).json() as Promise<T>
+}
+
+function formatPlatform(p: Partial<Platform>): string {
+  return [p.os, p.architecture, p.variant].filter(Boolean).join('/')
+}
+
 /**
- * Fetches one page of repository names from the registry catalog.
- *
- * The registry uses cursor-based pagination: pass the `nextCursor` from the
- * previous response as `last` to get the following page.
- *
- * @param pageSize - Maximum number of repositories to return (default 50).
- * @param last - Cursor from the previous page; omit for the first page.
+ * The registry signals more pages via a `Link: <...?last=X>; rel="next"` header.
+ * Some implementations omit it, so a full page without the header also means "more".
  */
-export async function fetchCatalogPage(pageSize = 50, last?: string): Promise<CatalogPage> {
-  const params = new URLSearchParams({ n: String(pageSize) })
-  if (last) params.set('last', last)
-
-  const res = await fetch(`/v2/_catalog?${params}`)
-  if (!res.ok) {
-    if (res.status === 401) throw new Error('Unauthorized — check registry credentials in env vars')
-    throw new Error(`Registry error: ${res.status} ${res.statusText}`)
-  }
-
-  const data = (await res.json()) as { repositories?: string[] }
-  const repositories = data.repositories ?? []
-
-  // The registry signals more pages via a Link: <...?last=X>; rel="next" header.
-  // Fall back to using the last item as cursor if a full page was returned but
-  // no Link header is present (some registry implementations omit it).
-  let nextCursor: string | null = null
+function nextCatalogCursor(res: Response, repositories: string[], pageSize: number): string | null {
   const link = res.headers.get('Link')
   if (link) {
     const match = link.match(/[?&]last=([^&>]+)/)
-    if (match?.[1]) nextCursor = decodeURIComponent(match[1])
-  } else if (repositories.length === pageSize) {
-    nextCursor = repositories[repositories.length - 1] ?? null
+    return match?.[1] ? decodeURIComponent(match[1]) : null
   }
-
-  return { repositories, nextCursor }
+  return repositories.length === pageSize ? (repositories.at(-1) ?? null) : null
 }
 
-/**
- * Returns all tags for the given repository.
- * @param repository - Full repository name, e.g. `mypo-io/mypo-landing`
- */
+export async function fetchCatalogPage(pageSize: number, last?: string): Promise<CatalogPage> {
+  const params = new URLSearchParams({ n: String(pageSize) })
+  if (last) params.set('last', last)
+
+  const res = await registryRequest(`/_catalog?${params}`)
+  const { repositories = [] } = (await res.json()) as { repositories?: string[] }
+  return { repositories, nextCursor: nextCatalogCursor(res, repositories, pageSize) }
+}
+
 export async function fetchTags(repository: string): Promise<string[]> {
-  const data = (await registryFetch(`/${repository}/tags/list`)) as { tags?: string[] }
+  const data = await registryJson<{ tags?: string[] | null }>(`/${repository}/tags/list`)
   return data.tags ?? []
 }
 
+async function fetchManifest(repository: string, reference: string): Promise<{ digest: string; manifest: Manifest }> {
+  const res = await registryRequest(`/${repository}/manifests/${reference}`, { headers: { Accept: MANIFEST_ACCEPT } })
+  return { digest: res.headers.get('Docker-Content-Digest') ?? '', manifest: (await res.json()) as Manifest }
+}
+
+async function fetchConfig(repository: string, digest: string): Promise<ImageConfig | null> {
+  try {
+    return await registryJson<ImageConfig>(`/${repository}/blobs/${digest}`)
+  } catch {
+    return null
+  }
+}
+
+async function describeImage(repository: string, manifest: Manifest): Promise<Omit<ImageDetails, 'digest'>> {
+  const config = manifest.config ? await fetchConfig(repository, manifest.config.digest) : null
+  const size = (manifest.config?.size ?? 0) + (manifest.layers ?? []).reduce((sum, l) => sum + l.size, 0)
+  return {
+    size,
+    createdAt: config?.created ? new Date(config.created) : null,
+    platforms: config?.os ? [formatPlatform(config)] : [],
+  }
+}
+
+export async function fetchImageDetails(repository: string, tag: string): Promise<ImageDetails> {
+  const { digest, manifest } = await fetchManifest(repository, tag)
+  if (!manifest.manifests) return { digest, ...(await describeImage(repository, manifest)) }
+
+  // Buildx attestation manifests are listed with platform `unknown/unknown`.
+  const images = manifest.manifests.filter((m) => m.platform && m.platform.os !== 'unknown')
+  const first = images[0]
+  const details = first
+    ? await describeImage(repository, (await fetchManifest(repository, first.digest)).manifest)
+    : { size: 0, createdAt: null }
+  return { ...details, digest, platforms: images.map((m) => formatPlatform(m.platform!)) }
+}
+
+/** One tags request plus details of the tag that best represents the current deploy. */
+export async function fetchRepositorySummary(repository: string): Promise<RepositorySummary> {
+  const tags = await fetchTags(repository)
+  const newest = newestVersion(tags)
+  const deployed = tags.includes(LATEST_TAG) ? LATEST_TAG : newest
+  const details = deployed ? await fetchImageDetails(repository, deployed) : null
+  return { tagCount: tags.length, newestVersion: newest, updatedAt: details?.createdAt ?? null }
+}
+
 /**
- * Deletes a tag from the registry.
- *
- * Deletion is a two-step process required by the Registry API:
- * 1. Resolve the tag to its content-addressable digest via a HEAD request.
- * 2. Delete the manifest by digest.
- *
- * @param repository - Full repository name, e.g. `mypo-io/mypo-landing`
- * @param tag - Tag to delete, e.g. `1.0.0`
- * @throws {Error} if the registry has deletions disabled (HTTP 405).
+ * The Registry API deletes manifests, not tags: resolve the tag's digest, then
+ * delete by digest. Every other tag pointing at the same digest goes with it.
  */
 export async function deleteTag(repository: string, tag: string): Promise<void> {
-  const headRes = await fetch(`/v2/${repository}/manifests/${tag}`, {
+  const head = await registryRequest(`/${repository}/manifests/${tag}`, {
     method: 'HEAD',
-    headers: { Accept: 'application/vnd.docker.distribution.manifest.v2+json' },
+    headers: { Accept: MANIFEST_ACCEPT },
   })
-  if (!headRes.ok) throw new Error(`Failed to resolve manifest digest: ${headRes.status}`)
-
-  const digest = headRes.headers.get('Docker-Content-Digest')
+  const digest = head.headers.get('Docker-Content-Digest')
   if (!digest) throw new Error('Registry did not return Docker-Content-Digest header')
 
-  const delRes = await fetch(`/v2/${repository}/manifests/${digest}`, { method: 'DELETE' })
-  if (!delRes.ok) {
-    if (delRes.status === 405) {
-      throw new Error('Registry has deletions disabled — add `delete: enabled: true` to registry config')
-    }
-    throw new Error(`Delete failed: ${delRes.status} ${delRes.statusText}`)
-  }
+  await registryRequest(`/${repository}/manifests/${digest}`, { method: 'DELETE' })
 }

@@ -4,29 +4,14 @@
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Repositories</h1>
         <p class="text-gray-500 text-sm mt-1">
-          {{ repositories.length }}{{ hasMore ? '+' : '' }} images across {{ Object.keys(grouped).length }} namespaces
+          {{ repositories.length }}{{ hasMore ? '+' : '' }} images across {{ pluralize(groups.length, 'namespace') }}
         </p>
       </div>
-      <button
-        @click="reload"
-        :disabled="loading"
-        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 transition-all text-sm font-medium disabled:opacity-50"
-      >
-        <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-        </svg>
-        Refresh
-      </button>
+      <RefreshButton :loading="loading" @click="reload" />
     </div>
 
-    <div v-if="error" class="flex items-center gap-3 text-red-400 text-sm bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3 mb-6">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-      {{ error }}
-    </div>
+    <ErrorAlert v-if="error" :message="error" />
 
-    <!-- Initial skeleton -->
     <div v-if="loading && !repositories.length" class="space-y-4">
       <div v-for="i in 2" :key="i" class="bg-gray-900/50 rounded-2xl p-4 border border-gray-800 animate-pulse">
         <div class="h-5 w-32 bg-gray-800 rounded mb-3" />
@@ -37,67 +22,91 @@
     </div>
 
     <div v-else-if="!repositories.length && !loading" class="text-center text-gray-600 py-24">
-      <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-      </svg>
+      <AppIcon name="box" :stroke-width="1.5" class="w-12 h-12 mx-auto mb-4 opacity-50" />
       <p class="text-lg font-medium text-gray-500">No repositories found</p>
     </div>
 
     <div v-else class="space-y-3">
-      <div class="relative mb-6">
-        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-        </svg>
-        <input
-          v-model="search"
-          type="search"
-          placeholder="Search repositories…"
-          class="w-full bg-gray-900 border border-gray-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
-        />
+      <div class="flex flex-col sm:flex-row gap-3 mb-6">
+        <SearchInput v-model="search" placeholder="Search repositories…" class="flex-1" />
+        <div class="flex rounded-xl border border-gray-800 bg-gray-900 p-1 text-xs font-medium shrink-0">
+          <button
+            v-for="(label, mode) in SORT_LABELS"
+            :key="mode"
+            class="flex-1 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors"
+            :class="sort === mode ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'"
+            @click="sort = mode"
+          >
+            {{ label }}
+          </button>
+        </div>
       </div>
 
-      <div v-for="(repos, ns) in filteredGrouped" :key="ns" class="rounded-2xl border border-gray-800 overflow-hidden">
+      <div v-for="group in filteredGroups" :key="group.namespace" class="rounded-2xl border border-gray-800 overflow-hidden">
         <button
           class="w-full flex items-center justify-between px-5 py-4 bg-gray-900 hover:bg-gray-800/80 transition-colors"
-          @click="toggleNs(ns)"
+          @click="collapsed[group.namespace] = !collapsed[group.namespace]"
         >
           <div class="flex items-center gap-3">
             <div
               class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
-              :style="{ background: nsColor(ns, 0.15), color: nsColor(ns, 1) }"
+              :style="{ background: nsColor(group.namespace, 0.15), color: nsColor(group.namespace, 1) }"
             >
-              {{ ns.slice(0, 2).toUpperCase() }}
+              {{ group.namespace.slice(0, 2).toUpperCase() }}
             </div>
-            <span class="font-semibold text-white">{{ ns }}</span>
+            <span class="font-semibold text-white">{{ group.namespace }}</span>
             <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
-              {{ repos.length }}
+              {{ group.repos.length }}
             </span>
           </div>
-          <svg
+          <AppIcon
+            name="chevronDown"
             class="w-4 h-4 text-gray-500 transition-transform duration-200"
-            :class="{ 'rotate-180': !collapsed[ns] }"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-          </svg>
+            :class="{ 'rotate-180': !collapsed[group.namespace] }"
+          />
         </button>
 
-        <div v-show="!collapsed[ns]" class="divide-y divide-gray-800/60">
+        <div v-show="!collapsed[group.namespace]" class="divide-y divide-gray-800/60">
           <RouterLink
-            v-for="repo in repos"
+            v-for="repo in group.repos"
             :key="repo.full"
             :to="`/repository/${repo.full}`"
-            class="flex items-center justify-between px-5 py-3.5 bg-gray-900/40 hover:bg-gray-800/60 transition-colors group"
+            class="flex items-center justify-between gap-4 px-5 py-3.5 bg-gray-900/40 hover:bg-gray-800/60 transition-colors group"
           >
             <div class="flex items-center gap-3 min-w-0">
-              <svg class="w-4 h-4 text-gray-600 group-hover:text-blue-400 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-              </svg>
+              <AppIcon name="box" class="w-4 h-4 text-gray-600 group-hover:text-blue-400 transition-colors shrink-0" />
               <span class="text-sm font-mono text-gray-300 group-hover:text-white transition-colors truncate">{{ repo.name }}</span>
             </div>
-            <svg class="w-3.5 h-3.5 text-gray-700 group-hover:text-gray-400 transition-all group-hover:translate-x-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
+
+            <div class="flex items-center gap-4 shrink-0 text-xs">
+              <template v-if="!(repo.full in summaries)">
+                <div class="h-5 w-24 bg-gray-800 rounded animate-pulse" />
+                <div class="hidden sm:block h-4 w-28 bg-gray-800/70 rounded animate-pulse" />
+              </template>
+              <span v-else-if="summaries[repo.full]?.tagCount === 0" class="text-gray-600">no tags</span>
+              <template v-else-if="summaries[repo.full]">
+                <span
+                  v-if="summaries[repo.full]!.newestVersion"
+                  class="px-2 py-0.5 rounded-md font-mono font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 max-w-40 truncate"
+                  title="Newest tag"
+                >
+                  {{ summaries[repo.full]!.newestVersion }}
+                </span>
+                <span class="hidden sm:flex items-center gap-1.5 text-gray-500 w-28" title="Last build of the deployed tag">
+                  <AppIcon name="clock" class="w-3.5 h-3.5 shrink-0" />
+                  <RelativeTime v-if="summaries[repo.full]!.updatedAt" :date="summaries[repo.full]!.updatedAt!" />
+                  <span v-else>—</span>
+                </span>
+                <span class="hidden md:inline text-gray-600 w-14 text-right">
+                  {{ pluralize(summaries[repo.full]!.tagCount, 'tag') }}
+                </span>
+              </template>
+              <span v-else class="text-gray-700" title="Couldn't load tags">—</span>
+              <AppIcon
+                name="chevronRight"
+                class="w-3.5 h-3.5 text-gray-700 group-hover:text-gray-400 transition-all group-hover:translate-x-0.5"
+              />
+            </div>
           </RouterLink>
         </div>
       </div>
@@ -105,11 +114,8 @@
       <!-- Sentinel element observed by IntersectionObserver to trigger next page load -->
       <div ref="sentinel" class="h-px" />
 
-      <!-- Loading next page -->
       <div v-if="loading && repositories.length" class="flex justify-center py-4">
-        <svg class="w-5 h-5 text-gray-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-        </svg>
+        <AppIcon name="refresh" class="w-5 h-5 text-gray-600 animate-spin" />
       </div>
     </div>
   </div>
@@ -118,108 +124,108 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchCatalogPage } from '@/api/registry'
+import { fetchCatalogPage, fetchRepositorySummary, type RepositorySummary } from '@/api/registry'
+import { CATALOG_PAGE_SIZE, DETAILS_CONCURRENCY } from '@/constants/registry.const'
+import { ROOT_NAMESPACE, SORT_LABELS, type SortMode } from '@/constants/catalog.const'
+import { forEachConcurrent, splitRepository, type RepositoryName } from '@/utils/repository'
+import { errorMessage, pluralize } from '@/utils/format'
+import AppIcon from '@/components/AppIcon.vue'
+import ErrorAlert from '@/components/ErrorAlert.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
+import RelativeTime from '@/components/RelativeTime.vue'
+import SearchInput from '@/components/SearchInput.vue'
 
-const PAGE_SIZE = 50
-
-interface Repo {
-  /** Full repository path, e.g. `mypo-io/mypo-landing` */
-  full: string
-  /** Repository name without the namespace prefix */
-  name: string
+interface NamespaceGroup {
+  namespace: string
+  repos: RepositoryName[]
 }
 
 const repositories = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
+const sort = ref<SortMode>('name')
 const hasMore = ref(false)
 const cursor = ref<string | null>(null)
 
-/** Tracks collapsed state per namespace; true = collapsed */
+/** Missing key = still loading, `null` = failed to load. */
+const summaries = reactive<Record<string, RepositorySummary | null>>({})
+
+/** true = collapsed */
 const collapsed = reactive<Record<string, boolean>>({})
 
-/** Sentinel DOM element watched by the IntersectionObserver */
 const sentinel = ref<HTMLElement | null>(null)
 
-/**
- * Repositories grouped by namespace (the part before the first `/`).
- * Repositories without a `/` are placed under the `(root)` group.
- */
-const grouped = computed(() => {
-  const groups: Record<string, Repo[]> = {}
-  for (const r of repositories.value) {
-    const slashIdx = r.indexOf('/')
-    const ns = slashIdx !== -1 ? r.slice(0, slashIdx) : '(root)'
-    const name = slashIdx !== -1 ? r.slice(slashIdx + 1) : r
-    ;(groups[ns] ??= []).push({ full: r, name })
-  }
-  return groups
-})
-
-/** Filtered version of `grouped`, matching the current search query. */
-const filteredGrouped = computed(() => {
-  const q = search.value.toLowerCase()
-  if (!q) return grouped.value
-  const result: typeof grouped.value = {}
-  for (const [ns, repos] of Object.entries(grouped.value)) {
-    const matched = repos.filter((r) => r.full.toLowerCase().includes(q) || ns.toLowerCase().includes(q))
-    if (matched.length) result[ns] = matched
-  }
-  return result
-})
-
-/** Toggles the collapsed state of the given namespace group. */
-function toggleNs(ns: string): void {
-  collapsed[ns] = !collapsed[ns]
+function updatedAt(full: string): number {
+  return summaries[full]?.updatedAt?.getTime() ?? 0
 }
 
-/**
- * Returns a deterministic HSL color derived from the namespace name.
- * The same namespace always produces the same hue.
- * @param alpha - CSS alpha value (0–1)
- */
+const groups = computed<NamespaceGroup[]>(() => {
+  const byNamespace: Record<string, RepositoryName[]> = {}
+  for (const full of repositories.value) {
+    const repo = splitRepository(full)
+    ;(byNamespace[repo.namespace || ROOT_NAMESPACE] ??= []).push(repo)
+  }
+  const result = Object.entries(byNamespace).map(([namespace, repos]) => ({ namespace, repos }))
+  if (sort.value === 'name') return result
+
+  for (const g of result) g.repos.sort((a, b) => updatedAt(b.full) - updatedAt(a.full))
+  return result.sort((a, b) => updatedAt(b.repos[0]!.full) - updatedAt(a.repos[0]!.full))
+})
+
+const filteredGroups = computed<NamespaceGroup[]>(() => {
+  const q = search.value.toLowerCase()
+  if (!q) return groups.value
+  return groups.value
+    .map((g) => ({
+      namespace: g.namespace,
+      repos: g.repos.filter((r) => r.full.toLowerCase().includes(q) || g.namespace.toLowerCase().includes(q)),
+    }))
+    .filter((g) => g.repos.length)
+})
+
+/** Deterministic hue per namespace so the same namespace always gets the same color. */
 function nsColor(ns: string, alpha: number): string {
   let hash = 0
   for (let i = 0; i < ns.length; i++) hash = ns.charCodeAt(i) + ((hash << 5) - hash)
-  const h = Math.abs(hash) % 360
-  return `hsla(${h}, 65%, 60%, ${alpha})`
+  return `hsla(${Math.abs(hash) % 360}, 65%, 60%, ${alpha})`
 }
 
-/** Fetches the next page and appends results to `repositories`. */
-async function loadMore(): Promise<void> {
-  if (loading.value || !hasMore.value) return
+function loadSummaries(names: string[]): Promise<void> {
+  return forEachConcurrent(names, DETAILS_CONCURRENCY, async (name) => {
+    try {
+      summaries[name] = await fetchRepositorySummary(name)
+    } catch {
+      summaries[name] = null
+    }
+  })
+}
+
+async function loadPage(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const page = await fetchCatalogPage(PAGE_SIZE, cursor.value ?? undefined)
+    const page = await fetchCatalogPage(CATALOG_PAGE_SIZE, cursor.value ?? undefined)
     repositories.value.push(...page.repositories)
     cursor.value = page.nextCursor
     hasMore.value = page.nextCursor !== null
+    void loadSummaries(page.repositories)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
 }
 
-/** Resets state and loads the first page. */
+function loadMore(): void {
+  if (!loading.value && hasMore.value) void loadPage()
+}
+
 async function reload(): Promise<void> {
   repositories.value = []
   cursor.value = null
-  hasMore.value = true
-  loading.value = true
-  error.value = ''
-  try {
-    const page = await fetchCatalogPage(PAGE_SIZE)
-    repositories.value = page.repositories
-    cursor.value = page.nextCursor
-    hasMore.value = page.nextCursor !== null
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loading.value = false
-  }
+  for (const key of Object.keys(summaries)) delete summaries[key]
+  await loadPage()
 }
 
 let observer: IntersectionObserver | null = null
@@ -227,7 +233,6 @@ let observer: IntersectionObserver | null = null
 onMounted(async () => {
   await reload()
 
-  // Watch the sentinel element: when it enters the viewport, load the next page.
   observer = new IntersectionObserver(
     (entries) => { if (entries[0]?.isIntersecting) loadMore() },
     { rootMargin: '200px' },
