@@ -74,8 +74,19 @@
             class="flex items-center justify-between gap-4 px-5 py-3.5 bg-gray-900/40 hover:bg-gray-800/60 transition-colors group"
           >
             <div class="flex items-center gap-3 min-w-0">
-              <AppIcon name="box" class="w-4 h-4 text-gray-600 group-hover:text-blue-400 transition-colors shrink-0" />
+              <AppIcon
+                name="box"
+                class="w-4 h-4 transition-colors shrink-0"
+                :class="isRecent(repo.full) ? 'text-emerald-400' : 'text-gray-600 group-hover:text-blue-400'"
+              />
               <span class="text-sm font-mono text-gray-300 group-hover:text-white transition-colors truncate">{{ repo.name }}</span>
+              <span
+                v-if="isRecent(repo.full)"
+                class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                title="Pushed within the last 24 hours"
+              >
+                new
+              </span>
             </div>
 
             <div class="flex items-center gap-4 shrink-0 text-xs">
@@ -92,7 +103,11 @@
                 >
                   {{ summaries[repo.full]!.newestVersion }}
                 </span>
-                <span class="hidden sm:flex items-center gap-1.5 text-gray-500 w-28" title="Last build of the deployed tag">
+                <span
+                  class="hidden sm:flex items-center gap-1.5 w-28"
+                  :class="isRecent(repo.full) ? 'text-emerald-400' : 'text-gray-500'"
+                  title="Last build of the deployed tag"
+                >
                   <AppIcon name="clock" class="w-3.5 h-3.5 shrink-0" />
                   <RelativeTime v-if="summaries[repo.full]!.updatedAt" :date="summaries[repo.full]!.updatedAt!" />
                   <span v-else>—</span>
@@ -126,7 +141,7 @@ import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchCatalogPage, fetchRepositorySummary, type RepositorySummary } from '@/api/registry'
 import { CATALOG_PAGE_SIZE, DETAILS_CONCURRENCY } from '@/constants/registry.const'
-import { ROOT_NAMESPACE, SORT_LABELS, type SortMode } from '@/constants/catalog.const'
+import { DEFAULT_SORT, RECENT_UPDATE_MS, ROOT_NAMESPACE, SORT_LABELS, SORT_STORAGE_KEY, type SortMode } from '@/constants/catalog.const'
 import { forEachConcurrent, splitRepository, type RepositoryName } from '@/utils/repository'
 import { errorMessage, pluralize } from '@/utils/format'
 import AppIcon from '@/components/AppIcon.vue'
@@ -144,7 +159,7 @@ const repositories = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
-const sort = ref<SortMode>('name')
+const sort = ref<SortMode>(readSort())
 const hasMore = ref(false)
 const cursor = ref<string | null>(null)
 
@@ -156,8 +171,30 @@ const collapsed = reactive<Record<string, boolean>>({})
 
 const sentinel = ref<HTMLElement | null>(null)
 
+function readSort(): SortMode {
+  try {
+    const saved = localStorage.getItem(SORT_STORAGE_KEY)
+    return saved && saved in SORT_LABELS ? (saved as SortMode) : DEFAULT_SORT
+  } catch {
+    return DEFAULT_SORT
+  }
+}
+
+watch(sort, (mode) => {
+  try {
+    localStorage.setItem(SORT_STORAGE_KEY, mode)
+  } catch {
+    // Private mode / blocked storage: the choice just isn't remembered.
+  }
+})
+
 function updatedAt(full: string): number {
   return summaries[full]?.updatedAt?.getTime() ?? 0
+}
+
+function isRecent(full: string): boolean {
+  const at = updatedAt(full)
+  return at > 0 && Date.now() - at < RECENT_UPDATE_MS
 }
 
 const groups = computed<NamespaceGroup[]>(() => {
