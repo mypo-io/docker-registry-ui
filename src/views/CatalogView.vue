@@ -4,7 +4,7 @@
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Repositories</h1>
         <p class="text-gray-500 text-sm mt-1">
-          {{ repositories.length }}{{ hasMore ? '+' : '' }} images across {{ pluralize(groups.length, 'namespace') }}
+          {{ imageCount }} images across {{ pluralize(groups.length, 'namespace') }}
         </p>
       </div>
       <RefreshButton :loading="loading" @click="reload" />
@@ -162,6 +162,8 @@ const search = ref('')
 const sort = ref<SortMode>(readSort())
 const hasMore = ref(false)
 const cursor = ref<string | null>(null)
+
+const imageCount = computed(() => `${repositories.value.length}${hasMore.value ? '+' : ''}`)
 
 /** Missing key = still loading, `null` = failed to load. */
 const summaries = reactive<Record<string, RepositorySummary | null>>({})

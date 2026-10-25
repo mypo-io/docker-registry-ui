@@ -22,4 +22,5 @@ export const MEDIA_TYPES = {
 export const MANIFEST_ACCEPT = Object.values(MEDIA_TYPES).join(', ')
 
 export const COPY_FEEDBACK_MS = 2000
+export const COPIED_LABEL = 'Copied!'
 export const DELETE_ERROR_TIMEOUT_MS = 8000

@@ -37,7 +37,7 @@
     <div v-else>
       <div class="flex items-center justify-between gap-4 mb-3">
         <span class="text-xs text-gray-500 font-medium uppercase tracking-widest shrink-0">
-          {{ visibleTags.length === tags.length ? pluralize(tags.length, 'tag') : `${visibleTags.length} of ${pluralize(tags.length, 'tag')}` }}
+          {{ tagCount }}
         </span>
         <SearchInput v-model="filter" placeholder="Filter tags…" class="w-full max-w-xs" />
       </div>
@@ -74,7 +74,7 @@
                 :title="`Copy ${details[tag]!.digest}`"
                 @click="copy(`${REGISTRY_HOST}/${repo.full}@${details[tag]!.digest}`, `${tag}@digest`)"
               >
-                {{ copied === `${tag}@digest` ? 'Copied!' : shortDigest(details[tag]!.digest) }}
+                {{ digestLabel(tag) }}
               </button>
               <span
                 v-if="details[tag]!.platforms.length"
@@ -94,7 +94,7 @@
               @click="copy(`docker pull ${REGISTRY_HOST}/${repo.full}:${tag}`, tag)"
             >
               <AppIcon name="copy" class="w-3.5 h-3.5" />
-              {{ copied === tag ? 'Copied!' : 'docker pull' }}
+              {{ copyFeedback(tag, 'docker pull') }}
             </button>
 
             <button
@@ -108,14 +108,14 @@
 
             <div v-else class="flex items-center gap-1.5">
               <span class="text-red-400">
-                Delete{{ aliasesOf(tag).length ? ` with ${aliasesOf(tag).join(', ')}` : '' }}?
+                {{ deletePrompt(tag) }}
               </span>
               <button
                 :disabled="deleting === tag"
                 class="px-2.5 py-1 rounded-lg font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white transition-colors"
                 @click="doDelete(tag)"
               >
-                {{ deleting === tag ? '…' : 'Yes' }}
+                {{ confirmDeleteLabel(tag) }}
               </button>
               <button
                 class="px-2.5 py-1 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
@@ -150,6 +150,7 @@ import { ref, computed, reactive, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchTags, fetchImageDetails, deleteTag, type ImageDetails } from '@/api/registry'
 import {
+  COPIED_LABEL,
   COPY_FEEDBACK_MS,
   DELETE_ERROR_TIMEOUT_MS,
   DETAILS_CONCURRENCY,
@@ -209,6 +210,28 @@ const tagsByDigest = computed(() => {
 function aliasesOf(tag: string): string[] {
   const digest = details[tag]?.digest
   return digest ? (tagsByDigest.value[digest] ?? []).filter((t) => t !== tag) : []
+}
+
+const tagCount = computed(() => {
+  const total = pluralize(tags.value.length, 'tag')
+  return visibleTags.value.length === tags.value.length ? total : `${visibleTags.value.length} of ${total}`
+})
+
+function copyFeedback(key: string, idle: string): string {
+  return copied.value === key ? COPIED_LABEL : idle
+}
+
+function digestLabel(tag: string): string {
+  return copyFeedback(`${tag}@digest`, shortDigest(details[tag]!.digest))
+}
+
+function deletePrompt(tag: string): string {
+  const aliases = aliasesOf(tag)
+  return aliases.length ? `Delete with ${aliases.join(', ')}?` : 'Delete?'
+}
+
+function confirmDeleteLabel(tag: string): string {
+  return deleting.value === tag ? '…' : 'Yes'
 }
 
 const deployed = computed(() => details[LATEST_TAG] ?? details[newestVersion(tags.value) ?? ''] ?? null)
